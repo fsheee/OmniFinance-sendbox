@@ -85,7 +85,7 @@ export default function Dashboard() {
 
   // Dynamic API URL Helper for dev / prod compatibility
   const getApiUrl = (path: string) => {
-    if (process.env.NEXT_PUBLIC_API_URL) {
+    if (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_API_URL) {
       return `${process.env.NEXT_PUBLIC_API_URL}${path}`;
     }
     if (typeof window !== 'undefined') {
