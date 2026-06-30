@@ -118,6 +118,61 @@ CREATE TABLE IF NOT EXISTS agent_memory (
 
 ---
 
+## 🧠 ChromaDB Vector Store & RAG Pipeline
+
+### Vector Database Schema
+
+The literacy coach uses a **ChromaDB persistent vector store** (local `.chroma/` directory) with a single collection `financial_knowledge`:
+
+| Field        | Type     | Description                              |
+|-------------|----------|------------------------------------------|
+| `id`        | `str`    | Unique term key (e.g. `"compound_interest"`) |
+| `document`  | `str`    | Concatenated `definition + explanation` text |
+| `embedding` | `float[]`| ONNX-generated vector (384-d, cosine space) |
+| `metadata`  | `dict`   | `{term, definition, analogy, explanation}`   |
+
+### RAG Data Flow
+
+```
+Knowledge Base (Dict) ──► seed_knowledge_base()
+                               │
+                    ChromaDB DefaultEmbeddingFunction
+                        (ONNX all-MiniLM-L6-v2)
+                               │
+                    ┌──────────▼──────────┐
+                    │  PersistentClient   │
+                    │  → .chroma/         │
+                    └──────────┬──────────┘
+                               │
+            Agent D ──► search_knowledge(query, n=5)
+                               │
+                    query → _embed_fn → ChromaDB query
+                               │
+                    ┌──────────▼──────────┐
+                    │  Cosine similarity  │
+                    │  distance → score   │
+                    │  top-5 results      │
+                    └──────────┬──────────┘
+                               │
+                Return [{term, definition, analogy, explanation, score}]
+```
+
+### Key Files
+
+- **`database/vector_store.py`** — Implements `seed_knowledge_base()` (idempotent seeding) and `search_knowledge()` (vector search with similarity scoring). Uses ChromaDB's built-in `DefaultEmbeddingFunction` (ONNX-based, no external model download needed).
+- **`database/knowledge_base.py`** — Defines the `FINANCIAL_KB` dictionary mapping financial terms to `{definition, analogy, explanation}` objects.
+
+### Literacy Pipeline Integration (Agent D)
+
+1. User asks a financial question (e.g. *"What is compound interest?"*)
+2. Central Orchestrator routes to `FinancialLiteracyCoach`
+3. Coach calls `search_knowledge(query, n_results=5)`
+4. ChromaDB returns top-5 semantically similar terms with scores
+5. Coach injects inline analogies into the response (e.g. *"compound interest grows like a snowball effect"*)
+6. Final response returned to user
+
+---
+
 ## ⚡ Multi-Agent Execution Path Detailed
 
 ### 1. The Expense & Fraud Pipeline (Agent B ➔ Agent C)

@@ -85,8 +85,11 @@ export default function Dashboard() {
 
   // Dynamic API URL Helper for dev / prod compatibility
   const getApiUrl = (path: string) => {
-    if (typeof window !== 'undefined' && window.location.port === '3000') {
-      return `http://localhost:8000${path}`;
+    if (typeof window !== 'undefined') {
+      const port = window.location.port;
+      if (port && port !== '8000' && window.location.hostname === 'localhost') {
+        return `http://localhost:8000${path}`;
+      }
     }
     if (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_API_URL) {
       return `${process.env.NEXT_PUBLIC_API_URL}${path}`;
@@ -152,6 +155,7 @@ export default function Dashboard() {
     } catch (error) {
       setBackendConnected(false);
       console.error('Error fetching telemetry:', error);
+      console.error('URL attempted:', getApiUrl('/api/telemetry'));
     }
   };
 
@@ -166,6 +170,7 @@ export default function Dashboard() {
     } catch (error) {
       setBackendConnected(false);
       console.error('Error fetching ledger:', error);
+      console.error('URL attempted:', getApiUrl('/transactions?limit=20'));
     }
   };
 

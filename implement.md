@@ -113,6 +113,36 @@ Modify [main.py](file:///F:/bank-ai/main.py):
 
 ---
 
+---
+
+## 🧠 ChromaDB RAG Integration
+
+The literacy coach (Agent D) uses a **ChromaDB vector store** for semantic knowledge retrieval, but this runs entirely server-side. The frontend only needs to handle:
+
+1. **Chat messages** — User queries are sent to `/chat` and the response from the orchestrator (which internally calls Agent D → RAG) is streamed back.
+2. **Jargon highlighting** — Financial terms in chat messages that come from the RAG knowledge base should be visually highlighted (e.g. tooltip with analogy). This is purely a frontend rendering concern — the backend already tags terms in the response.
+
+No direct frontend API calls to ChromaDB are needed.
+
+### RAG Response Format (from `/chat` endpoint)
+
+When the orchestrator routes to Agent D (Literacy Coach), the chat response includes metadata:
+
+```json
+{
+  "response": "Compound interest grows like a snowball effect...",
+  "agent": "literacy_coach",
+  "rag_results": [
+    {"term": "compound_interest", "definition": "...", "score": 0.95},
+    {"term": "liquidity", "definition": "...", "score": 0.87}
+  ]
+}
+```
+
+The frontend can optionally render `rag_results` as a reference panel beneath the coach's response.
+
+---
+
 ## 🚀 How to Run the Updated App
 
 ### Development Mode (Concurrent dev servers)

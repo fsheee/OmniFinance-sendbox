@@ -2,21 +2,14 @@ import os
 from typing import Dict, Any, List, Optional
 import chromadb
 from chromadb.config import Settings
-from sentence_transformers import SentenceTransformer
+from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
 
 CHROMA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".chroma")
 
 _client: Optional[chromadb.PersistentClient] = None
 _collection: Optional[chromadb.Collection] = None
-_embedding_model: Optional[SentenceTransformer] = None
+_embed_fn = DefaultEmbeddingFunction()
 _seeded = False
-
-
-def _get_embedding(text: str) -> List[float]:
-    global _embedding_model
-    if _embedding_model is None:
-        _embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
-    return _embedding_model.encode(text).tolist()
 
 
 def seed_knowledge_base(knowledge_base: Dict[str, Dict[str, str]]):
@@ -35,7 +28,8 @@ def seed_knowledge_base(knowledge_base: Dict[str, Dict[str, str]]):
         if _collection.count() > 0:
             _seeded = True
             return
-    except ValueError:
+        _client.delete_collection("financial_knowledge")
+    except chromadb.errors.NotFoundError:
         pass
 
     _collection = _client.create_collection(
@@ -61,6 +55,7 @@ def seed_knowledge_base(knowledge_base: Dict[str, Dict[str, str]]):
     _collection.add(
         ids=ids,
         documents=documents,
+        embeddings=_embed_fn(documents),
         metadatas=metadatas
     )
 
@@ -71,9 +66,9 @@ def search_knowledge(query: str, n_results: int = 5) -> List[Dict[str, Any]]:
     if _collection is None:
         return []
 
-    query_embedding = _get_embedding(query)
+    query_embedding = _embed_fn([query])
     results = _collection.query(
-        query_embeddings=[query_embedding],
+        query_embeddings=query_embedding,
         n_results=n_results
     )
 

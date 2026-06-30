@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any, List
 import os
 from database import db
+from database.vector_store import search_knowledge
 from agents.orchestrator import CentralOrchestrator
 from config import settings
 
@@ -69,6 +70,11 @@ def get_sandbox_telemetry():
             "pending_hitl_pauses": pending_hitl_count
         }
     }
+
+@app.get("/knowledge/search")
+def knowledge_search(query: str, n_results: int = 5):
+    """Semantic search over the financial literacy knowledge base using ChromaDB vector search."""
+    return search_knowledge(query, n_results=n_results)
 
 @app.post("/chat")
 def chat_orchestrator(request: ChatRequest):
