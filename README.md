@@ -144,4 +144,122 @@ Exposes direct tool execution for external orchestrators.
   * `evaluate_fraud_risk`
   * `fetch_financial_knowledge_base`
 
+---
+
+## 🤖 Agent Skills Registry
+
+OmniFinance implements **Agent Skills** as a formal, discoverable system for exposing reusable agent capabilities. This enables:
+- **Skill Discovery**: External orchestrators can query available skills
+- **Tool Interoperability**: Standardized input/output contracts for skill invocation
+- **Dependency Tracking**: Skills declare dependencies and chaining relationships
+- **Performance Metrics**: Usage statistics and success rates per skill
+
+### Available Agent Skills
+
+The project exposes **3 core reusable agent skills**:
+
+1. **Expense Tracker Skills** (from `expense_tracker.py` agent)
+   - `parse_query`: Extract transaction details from natural language
+   - `log_transaction`: Record transaction to ledger with validation
+
+2. **Fraud Detector Skill** (from `fraud_detector.py` agent)
+   - `evaluate_fraud_risk`: Calculate composite risk score (amount, location, velocity)
+
+3. **Literacy Coach Skill** (from `literacy_coach.py` agent)
+   - `answer_question`: Retrieve financial knowledge from ChromaDB and explain concepts
+
+### Skill Discovery & Invocation
+
+Skills can be discovered and invoked through standardized endpoints (planned for v2):
+- Each skill has formal input/output schemas (JSON Schema format)
+- Skills declare dependencies and what they can chain to
+- Performance metrics track success rate, latency, and usage count
+
+---
+
+## 🧪 API Testing & Documentation
+
+### Interactive API Documentation
+
+FastAPI automatically generates interactive API documentation. After starting the server:
+
+**Swagger UI** (Recommended):
+```
+http://127.0.0.1:8000/docs
+```
+- Browse all available endpoints
+- Execute test requests directly from your browser
+- View request/response schemas
+- Test with example payloads
+
+**ReDoc Alternative**:
+```
+http://127.0.0.1:8000/redoc
+```
+- Alternative API documentation viewer
+
+### Complete Endpoint List
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| `GET` | `/api/telemetry` | Get sandbox status, wallet balance, transaction summary |
+| `GET` | `/knowledge/search` | Semantic search over financial literacy knowledge base |
+| `POST` | `/chat` | Main orchestrator - route queries to appropriate agents |
+| `POST` | `/transactions/approve` | Human-in-the-Loop approval/rejection of high-risk transactions |
+| `POST` | `/tools/execute` | Direct tool execution for external orchestrators |
+| `POST` | `/reset` | Reset sandbox to initial state ($5000 balance, cleared ledger) |
+| `GET` | `/docs` | Swagger interactive API documentation |
+| `GET` | `/redoc` | ReDoc alternative API documentation |
+
+### Example Test Workflow
+
+1. **Start the server**:
+   ```bash
+   uvicorn main:app --reload --port 8000
+   ```
+
+2. **Open Swagger UI**:
+   ```
+   http://127.0.0.1:8000/docs
+   ```
+
+3. **Test a transaction** (POST `/chat`):
+   ```json
+   {
+     "prompt": "Spent $85 at Starbucks yesterday morning",
+     "session_id": "test_session_1"
+   }
+   ```
+
+4. **Check wallet status** (GET `/api/telemetry`):
+   - View updated balance and transaction count
+
+5. **Search knowledge base** (GET `/knowledge/search`):
+   ```
+   ?query=compound%20interest&n_results=5
+   ```
+
+---
+
+## 📊 Project Overview
+
+**OmniFinance** is an enterprise-grade multi-agent banking sandbox implementing:
+
+- **Agent-Oriented Architecture**: Follows Google's Agent Development Kit (ADK) patterns for distributed autonomous agents
+- **Intelligent Routing**: Central orchestrator intelligently routes queries to specialized sub-agents
+- **Financial Domain Expertise**: Agents specialize in expense tracking, fraud detection, and financial literacy
+- **Human-in-the-Loop (HITL)**: Risk-triggered pause-and-approve workflow for high-risk transactions
+- **Model Context Protocol (MCP)**: Standardized schemas for tool execution and agent interoperability
+- **Vector Database**: ChromaDB integration for semantic search over financial knowledge
+- **Production-Ready**: Atomic transactions, audit logging, structured error handling
+
+### Key Features
+
+✅ Real-time fraud detection with configurable risk thresholds  
+✅ Semantic search over financial knowledge base  
+✅ Transaction ledger with color-coded risk indicators  
+✅ Dashboard telemetry for wallet monitoring  
+✅ Extensible agent framework for adding new capabilities  
+✅ Interactive API documentation with Swagger UI  
+
 

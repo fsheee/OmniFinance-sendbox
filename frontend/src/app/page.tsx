@@ -85,14 +85,16 @@ export default function Dashboard() {
 
   // Dynamic API URL Helper for dev / prod compatibility
   const getApiUrl = (path: string) => {
+    if (process.env.NEXT_PUBLIC_API_URL) {
+      return `${process.env.NEXT_PUBLIC_API_URL}${path}`;
+    }
     if (typeof window !== 'undefined') {
       const port = window.location.port;
-      if (port && port !== '8000' && window.location.hostname === 'localhost') {
-        return `http://localhost:8000${path}`;
+      const hostname = window.location.hostname;
+      const isLocalDev = port && port !== '8000' && (hostname === 'localhost' || hostname === '127.0.0.1');
+      if (isLocalDev) {
+        return `http://${hostname}:8000${path}`;
       }
-    }
-    if (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_API_URL) {
-      return `${process.env.NEXT_PUBLIC_API_URL}${path}`;
     }
     return path;
   };
@@ -281,6 +283,12 @@ export default function Dashboard() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt, session_id: sessionId }),
       });
+
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        const text = await response.text();
+        throw new Error(`Expected JSON but got ${contentType}: ${text.substring(0, 200)}`);
+      }
 
       const result = await response.json();
       setThinkingMessageId(null);

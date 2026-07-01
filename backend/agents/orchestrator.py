@@ -16,8 +16,18 @@ class CentralOrchestrator:
     def classify_intent(self, user_prompt: str) -> str:
         """
         Classifies user prompt intent to delegate to specialized sub-agents.
-        Uses Gemini if key exists, otherwise falls back to keyword matching.
+        Fraud keywords are checked FIRST (before Gemini) so transfer/send/wire
+        can never be misclassified by the LLM. Falls back to rule-based matching.
         """
+        p_lower = user_prompt.lower()
+        fraud_keywords = [
+            "transfer", "send", "wire", "from my account",
+            "to someone", "to account", "someone",
+            "fraud", "suspicious",
+        ]
+        if any(w in p_lower for w in fraud_keywords):
+            return "FRAUD"
+
         api_key = os.getenv("GEMINI_API_KEY")
         if api_key:
             try:
@@ -33,12 +43,16 @@ class CentralOrchestrator:
         system_instruction = (
             "You are a routing classification system. Your job is to classify the user's intent "
             "into one of the following exact strings: 'EXPENSE', 'FRAUD', 'LITERACY', or 'WALLET'.\n\n"
-            "- Choose 'EXPENSE' if the user is logging a purchase, expense, or telling you they spent money "
-            "(e.g., 'spent $45 on lunch', 'log $20 Starbucks').\n"
-            "- Choose 'FRAUD' if they are asking about fraud evaluation, suspicious charges, or risk scoring.\n"
-            "- Choose 'LITERACY' if they are asking about financial coaching, definitions (liquidity, compound interest), "
-            "wealth building, budgeting guides, etc.\n"
+            "- Choose 'FRAUD' if the user mentions transfers, sending money, wiring, or moving funds between accounts "
+            "(e.g., 'transfer $10000', 'send $500', 'wire money', 'from my account'). "
+            "Also choose 'FRAUD' for fraud evaluation, suspicious charges, or risk scoring.\n"
+            "- Choose 'EXPENSE' if the user is logging a purchase or telling you they spent money on something "
+            "(e.g., 'spent $45 on lunch', 'bought groceries', 'paid for pizza', 'ate out').\n"
+            "- Choose 'LITERACY' if they are asking for definitions or explanations "
+            "(e.g., 'explain compound interest', 'what is liquidity', 'how does inflation work', 'define budgeting').\n"
             "- Choose 'WALLET' if they are asking about their wallet, balance, or list of past transactions.\n\n"
+            "IMPORTANT: Fraud/transfer intents take priority over expense intents. "
+            "If a prompt mentions both sending money AND a specific merchant, classify as FRAUD.\n\n"
             "Respond with ONLY one word: EXPENSE, FRAUD, LITERACY, or WALLET."
         )
         payload = {
@@ -61,28 +75,26 @@ class CentralOrchestrator:
         wallet_words = ["balance", "wallet", "transactions", "ledger", "statement", "history", "how much money"]
         if any(w in p_lower for w in wallet_words):
             return "WALLET"
-            
-        # 2. Expense tracking detection
-        expense_words = ["spent", "spent$", "buy", "bought", "purchase", "log transaction", "pay", "paid", "$", "cost"]
-        if any(w in p_lower for w in expense_words) or any(char == '$' for char in p_lower):
-            return "EXPENSE"
-            
-        # 3. Financial coaching & education detection
-        literacy_words = [
-            "compound interest", "liquidity", "diversification", "inflation", 
-            "budget", "yield", "allocation", "explain", "coach", "interest", "wealth",
-            "emergency fund", "passive income", "risk tolerance", "asset allocation",
-            "debt", "compound growth", "financial", "invest", "saving", "portfolio",
-            "dividend", "bond", "stock", "retire"
+        
+        # 2. Fraud keywords (safety net — primary check is in classify_intent)
+        fraud_words = [
+            "transfer", "send", "wire", "from my account",
+            "to someone", "to account", "someone",
+            "fraud", "suspicious",
         ]
-        if any(w in p_lower for w in literacy_words):
-            return "LITERACY"
-            
-        # 4. Fraud analysis detection
-        fraud_words = ["fraud", "suspicious", "risk", "anomaly", "check transaction", "flagged"]
         if any(w in p_lower for w in fraud_words):
             return "FRAUD"
-            
+        
+        # 3. Expense tracking detection
+        expense_words = ["spent", "bought", "paid", "grocery", "pizza", "eat"]
+        if any(w in p_lower for w in expense_words):
+            return "EXPENSE"
+        
+        # 4. Financial literacy
+        literacy_words = ["explain", "what is", "how does", "define"]
+        if any(w in p_lower for w in literacy_words):
+            return "LITERACY"
+        
         # Default fallback
         return "LITERACY"
 

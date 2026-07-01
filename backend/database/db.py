@@ -3,7 +3,7 @@ import os
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 
-DB_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "omnifinance.db")
+DB_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "omnifinance.db")
 
 def get_connection():
     conn = sqlite3.connect(DB_FILE)
