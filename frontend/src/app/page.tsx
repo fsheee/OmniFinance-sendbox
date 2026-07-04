@@ -40,6 +40,7 @@ interface TelemetryData {
 
 export default function Dashboard() {
   const [sessionId] = useState(() => 'sandbox_session_' + Math.random().toString(36).substring(2, 10));
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://afsheenkhi-omnifinance-api.hf.space';
   
   // App States
   const [balance, setBalance] = useState<number>(0.0);
@@ -84,10 +85,7 @@ export default function Dashboard() {
   const chatInputRef = useRef<HTMLInputElement>(null);
 
   // Dynamic API URL Helper for dev / prod compatibility
-  const getApiUrl = (path: string) => {
-    const base = typeof process !== 'undefined' ? process.env.NEXT_PUBLIC_API_URL : undefined;
-    return base ? `${base}${path}` : path;
-  };
+  const getApiUrl = (path: string) => `${API_URL}${path}`;
 
   // Wrapper around fetch that attaches the API key header to every request
   const apiFetch = (url: string, options: RequestInit = {}) => {
@@ -503,7 +501,7 @@ export default function Dashboard() {
       {!backendConnected && (
         <div className="connection-banner">
           <i className="fa-solid fa-triangle-exclamation"></i>
-          Cannot connect to backend at <code>{process.env.NEXT_PUBLIC_API_URL}</code>. Make sure the FastAPI server is running (<code>uvicorn main:app --reload</code>).
+          Cannot connect to backend at <code>{API_URL}</code>. Make sure the FastAPI server is running (<code>uvicorn main:app --reload</code>).
         </div>
       )}
 
