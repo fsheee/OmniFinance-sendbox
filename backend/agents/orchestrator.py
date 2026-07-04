@@ -16,87 +16,109 @@ class CentralOrchestrator:
     def classify_intent(self, user_prompt: str) -> str:
         """
         Classifies user prompt intent to delegate to specialized sub-agents.
-        Fraud keywords are checked FIRST (before Gemini) so transfer/send/wire
-        can never be misclassified by the LLM. Falls back to rule-based matching.
+        Returns one of: WALLET, TRANSFER, EXPENSE, FINANCIAL_EDUCATION.
         """
         p_lower = user_prompt.lower()
-        fraud_keywords = [
-            "transfer", "send", "wire", "from my account",
-            "to someone", "to account", "someone",
-            "fraud", "suspicious",
-        ]
-        if any(w in p_lower for w in fraud_keywords):
-            return "FRAUD"
 
+        # 1. Wallet balance and history query — highest priority
+        wallet_words = ["balance", "wallet", "transactions", "ledger", "statement", "history", "how much money"]
+        if any(w in p_lower for w in wallet_words):
+            self._log_classification(user_prompt, "WALLET", "wallet keyword match")
+            return "WALLET"
+
+        # 2. Transfer/send money actions → Fraud Detection Agent
+        # Only match explicit transfer language, not general financial terms
+        transfer_keywords = [
+            "transfer ", " send ", " wire ", "send money", "send $",
+            "wire money", "from my account to", "to another account",
+            "transferring", "transfered",
+        ]
+        if any(w in p_lower for w in transfer_keywords):
+            self._log_classification(user_prompt, "TRANSFER", "transfer keyword match")
+            return "TRANSFER"
+
+        # 3. Try Gemini API for nuanced classification (if key is configured)
         api_key = os.getenv("GEMINI_API_KEY")
         if api_key:
             try:
-                return self._classify_with_gemini(user_prompt, api_key)
-            except Exception:
-                pass
+                result = self._classify_with_gemini(user_prompt, api_key)
+                if result:
+                    self._log_classification(user_prompt, result, "Gemini classification")
+                    return result
+            except Exception as e:
+                print(f"[INTENT] Gemini error: {e}")
+
+        # 4. Rule-based fallback
         return self._classify_rule_based(user_prompt)
+
+    def _log_classification(self, prompt: str, intent: str, source: str) -> None:
+        print(f"[INTENT] Input: '{prompt}' -> {intent} ({source})")
 
     def _classify_with_gemini(self, prompt: str, api_key: str) -> str:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
         headers = {"Content-Type": "application/json"}
-        
+
         system_instruction = (
-            "You are a routing classification system. Your job is to classify the user's intent "
-            "into one of the following exact strings: 'EXPENSE', 'FRAUD', 'LITERACY', or 'WALLET'.\n\n"
-            "- Choose 'FRAUD' if the user mentions transfers, sending money, wiring, or moving funds between accounts "
-            "(e.g., 'transfer $10000', 'send $500', 'wire money', 'from my account'). "
-            "Also choose 'FRAUD' for fraud evaluation, suspicious charges, or risk scoring.\n"
-            "- Choose 'EXPENSE' if the user is logging a purchase or telling you they spent money on something "
-            "(e.g., 'spent $45 on lunch', 'bought groceries', 'paid for pizza', 'ate out').\n"
-            "- Choose 'LITERACY' if they are asking for definitions or explanations "
-            "(e.g., 'explain compound interest', 'what is liquidity', 'how does inflation work', 'define budgeting').\n"
-            "- Choose 'WALLET' if they are asking about their wallet, balance, or list of past transactions.\n\n"
-            "IMPORTANT: Fraud/transfer intents take priority over expense intents. "
-            "If a prompt mentions both sending money AND a specific merchant, classify as FRAUD.\n\n"
-            "Respond with ONLY one word: EXPENSE, FRAUD, LITERACY, or WALLET."
+            "You are a routing classification system. Classify the user's intent into exactly one of:\n"
+            "'EXPENSE', 'TRANSFER', 'FINANCIAL_EDUCATION', or 'WALLET'.\n\n"
+            "- Choose 'TRANSFER' if the user explicitly wants to send, wire, or move money to another person "
+            "or account (e.g., 'transfer $10000 to John', 'send $500 to mom'). "
+            "Do NOT choose TRANSFER for general spending, paying bills, or asking how to pay something.\n"
+            "- Choose 'EXPENSE' if the user is logging a purchase, buying something, paying for something, "
+            "or recording money they spent (e.g., 'spent $45 on lunch', 'bought groceries', 'buy $400 vegetables', "
+            "'paid for pizza', 'spent $500 for pay fee').\n"
+            "- Choose 'FINANCIAL_EDUCATION' if the user is asking a question, seeking advice, or wants an "
+            "explanation about financial concepts, how to pay installments, budgeting, loans, credit, etc. "
+            "(e.g., 'what is compound interest', 'how to pay installment monthly', 'explain inflation', "
+            "'how does credit work', 'difference between savings and checking').\n"
+            "- Choose 'WALLET' if they are asking about their current balance, account statement, "
+            "wallet, or transaction history (e.g., 'show my balance', 'wallet').\n\n"
+            "IMPORTANT: Questions about how to do something financial (payments, installments, budgeting) "
+            "are FINANCIAL_EDUCATION, NOT TRANSFER.\n\n"
+            "Respond with ONLY one word: EXPENSE, TRANSFER, FINANCIAL_EDUCATION, or WALLET."
         )
         payload = {
             "contents": [{"parts": [{"text": f"{system_instruction}\n\nUser prompt: \"{prompt}\""}]}]
         }
-        
+
         response = httpx.post(url, headers=headers, json=payload, timeout=10.0)
         response.raise_for_status()
         result_json = response.json()
         classification = result_json["candidates"][0]["content"]["parts"][0]["text"].strip().upper()
-        
-        if classification in ["EXPENSE", "FRAUD", "LITERACY", "WALLET"]:
+
+        if classification in ["EXPENSE", "TRANSFER", "FINANCIAL_EDUCATION", "WALLET"]:
             return classification
-        return self._classify_rule_based(prompt)
+        return ""
 
     def _classify_rule_based(self, prompt: str) -> str:
         p_lower = prompt.lower()
-        
-        # 1. Wallet balance and history query detection
-        wallet_words = ["balance", "wallet", "transactions", "ledger", "statement", "history", "how much money"]
-        if any(w in p_lower for w in wallet_words):
-            return "WALLET"
-        
-        # 2. Fraud keywords (safety net — primary check is in classify_intent)
-        fraud_words = [
-            "transfer", "send", "wire", "from my account",
-            "to someone", "to account", "someone",
-            "fraud", "suspicious",
+
+        # Expense tracking
+        expense_words = [
+            "spent", "bought", "paid", "buy", "purchase", "shopping",
+            "grocery", "pizza", "eat", "lunch", "dinner", "food",
+            "vegetable", "restaurant", "coffee", "snack", "meal",
+            "ordered", "paid for", "spending",
         ]
-        if any(w in p_lower for w in fraud_words):
-            return "FRAUD"
-        
-        # 3. Expense tracking detection
-        expense_words = ["spent", "bought", "paid", "grocery", "pizza", "eat"]
         if any(w in p_lower for w in expense_words):
+            self._log_classification(prompt, "EXPENSE", "expense keyword match")
             return "EXPENSE"
-        
-        # 4. Financial literacy
-        literacy_words = ["explain", "what is", "how does", "define"]
+
+        # Financial education
+        literacy_words = [
+            "explain", "what is", "how does", "how do", "how to", "how can",
+            "define", "what does", "tell me about", "meaning of",
+            "what are", "what's ", "difference between", "example of",
+            "installment", "monthly payment", "emi", "loan", "credit",
+            "interest", "budget", "saving", "investment",
+        ]
         if any(w in p_lower for w in literacy_words):
-            return "LITERACY"
-        
-        # Default fallback
-        return "LITERACY"
+            self._log_classification(prompt, "FINANCIAL_EDUCATION", "education keyword match")
+            return "FINANCIAL_EDUCATION"
+
+        # Default fallback to education (safe default: explain financial concepts)
+        self._log_classification(prompt, "FINANCIAL_EDUCATION", "default fallback")
+        return "FINANCIAL_EDUCATION"
 
     def route_and_execute(self, user_prompt: str, session_id: str = "sandbox_session") -> Dict[str, Any]:
         """
@@ -148,6 +170,7 @@ class CentralOrchestrator:
             
             return {
                 "intent": "EXPENSE",
+                "agent": "Expense Tracker Agent",
                 "status": "PAUSED_WAITING_FOR_HITL" if status == "PENDING_HITL" else "SUCCESS",
                 "data": {
                     "transaction": logged_tx,
@@ -160,19 +183,18 @@ class CentralOrchestrator:
                 )
             }
             
-        elif intent == "FRAUD":
-            # Extract basic params for verification
-            # Mock risk calculation query
+        elif intent == "TRANSFER":
             import re
             amounts = re.findall(r"\d+", user_prompt)
             amount = float(amounts[0]) if amounts else 100.0
-            
+
             location = "Suspicious Location" if "suspicious" in user_prompt.lower() else "Home Location"
             velocity = 1 if "fast" in user_prompt.lower() or "quick" in user_prompt.lower() else 30
-            
+
             evaluation = self.fraud_detector.evaluate_fraud_risk(amount, location, velocity)
             return {
-                "intent": "FRAUD",
+                "intent": "TRANSFER",
+                "agent": "Transfer Router Pipeline",
                 "status": "SUCCESS",
                 "data": {
                     "evaluation": evaluation,
@@ -184,16 +206,17 @@ class CentralOrchestrator:
                 },
                 "message": f"Fraud risk evaluation completed. Risk Score: {evaluation['risk_score']}%. Decision: {evaluation['decision']}."
             }
-            
-        elif intent == "LITERACY":
-            # Delegate to Agent D (Financial Literacy Coach)
+
+        elif intent == "FINANCIAL_EDUCATION":
             coach_result = self.literacy_coach.execute(user_prompt)
             return {
-                "intent": "LITERACY",
+                "intent": "FINANCIAL_EDUCATION",
+                "agent": "Financial Literacy Coach",
                 "status": "SUCCESS",
                 "data": {
                     "response": coach_result["response"],
-                    "references": coach_result["knowledge_base_references"]
+                    "references": coach_result["knowledge_base_references"
+                    ]
                 },
                 "message": coach_result["response"]
             }
@@ -212,6 +235,7 @@ class CentralOrchestrator:
             
             return {
                 "intent": "WALLET",
+                "agent": "Central Orchestrator",
                 "status": "SUCCESS",
                 "data": {
                     "account": account,
@@ -222,6 +246,7 @@ class CentralOrchestrator:
             
         return {
             "intent": "UNKNOWN",
+            "agent": "Central Orchestrator",
             "status": "ERROR",
             "message": "Sorry, I could not classify your query. Please ask me about balance, expenses, or financial literacy."
         }
