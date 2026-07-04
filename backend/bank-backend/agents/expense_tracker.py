@@ -100,9 +100,9 @@ class ExpenseTrackerAgent:
         # 2. Extract Merchant
         merchant = "Unknown Merchant"
 
-        # Find noun/item after indicator keywords: on, for, at, buy, buying, bought
+        # Find noun/item after indicator keywords: buy, on, for, at
         noun_pattern = re.search(
-            r"\b(buying|bought|buy|on|for|at)\s+([A-Za-z']+)",
+            r"\b(buy|on|for|at)\s+(?:(?:a|an|the)\s+)?([A-Za-z']+)",
             query,
             re.IGNORECASE
         )
@@ -112,6 +112,11 @@ class ExpenseTrackerAgent:
                 merchant = "Grocery Store"
             else:
                 merchant = item.capitalize()
+        else:
+            # Fallback: extract word(s) before the dollar amount
+            pre_amount = re.search(r'([A-Za-z\']+)\s+\$', query)
+            if pre_amount:
+                merchant = pre_amount.group(1).capitalize()
 
         # 3. Categorize
         category = "General"

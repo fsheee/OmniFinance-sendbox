@@ -1,3 +1,4 @@
+import re
 import uuid
 import logging
 from typing import Dict, Any, Optional
@@ -69,8 +70,12 @@ class CentralOrchestrator:
             return "WALLET"
             
         # 2. Transfer detection (check before expense to route correctly)
-        transfer_words = ["transfer", "send money", "send ", "wire", "zelle", "venmo"]
+        transfer_words = ["transfer", "send money", "send ", "wire", "zelle", "venmo", "dubai", "transfer to"]
         if any(w in p_lower for w in transfer_words):
+            return "TRANSFER"
+
+        # Match "to [Name]" pattern for transfers
+        if re.search(r'\bto\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', prompt):
             return "TRANSFER"
 
         # 3. Expense tracking detection

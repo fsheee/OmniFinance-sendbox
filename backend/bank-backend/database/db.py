@@ -170,6 +170,11 @@ def handle_hitl_approval(tx_id: str, approve: bool) -> Dict[str, Any]:
             row = cursor.fetchone()
             current_balance = row["balance"] if row else 0.0
             if amount > current_balance:
+                cursor.execute(
+                    "UPDATE transactions SET status = 'REJECTED' WHERE id = ?",
+                    (tx_id,)
+                )
+                conn.commit()
                 return {
                     "status": "REJECTED",
                     "reason": "Cannot approve - still insufficient balance",

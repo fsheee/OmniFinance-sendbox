@@ -85,18 +85,8 @@ export default function Dashboard() {
 
   // Dynamic API URL Helper for dev / prod compatibility
   const getApiUrl = (path: string) => {
-    if (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_API_URL) {
-      return `${process.env.NEXT_PUBLIC_API_URL}${path}`;
-    }
-    if (typeof window !== 'undefined') {
-      const port = window.location.port;
-      const hostname = window.location.hostname;
-      const isLocalDev = port && port !== '8000' && (hostname === 'localhost' || hostname === '127.0.0.1');
-      if (isLocalDev) {
-        return `http://${hostname}:8000${path}`;
-      }
-    }
-    return path;
+    const base = typeof process !== 'undefined' ? process.env.NEXT_PUBLIC_API_URL : undefined;
+    return base ? `${base}${path}` : path;
   };
 
   // Wrapper around fetch that attaches the API key header to every request
@@ -513,7 +503,7 @@ export default function Dashboard() {
       {!backendConnected && (
         <div className="connection-banner">
           <i className="fa-solid fa-triangle-exclamation"></i>
-          Cannot connect to backend at <code>localhost:8000</code>. Make sure the FastAPI server is running (<code>uvicorn main:app --reload</code>).
+          Cannot connect to backend at <code>{process.env.NEXT_PUBLIC_API_URL}</code>. Make sure the FastAPI server is running (<code>uvicorn main:app --reload</code>).
         </div>
       )}
 
