@@ -241,6 +241,19 @@ http://127.0.0.1:8000/redoc
 
 ---
 
+## API Authentication
+
+Protected endpoints require API key in header:
+```
+X-API-Key: omnifinance-secret-key
+```
+
+## Quick Test
+Dashboard: https://omnifinance-ten.vercel.app/
+API Docs: https://afsheekhi-omnifinance-api.hf.space/docs
+
+---
+
 ## 📊 Project Overview
 
 **OmniFinance** is an enterprise-grade multi-agent banking sandbox implementing:
