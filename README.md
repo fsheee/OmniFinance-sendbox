@@ -14,33 +14,41 @@ OmniFinance is a multi-agent digital banking sandbox leveraging Google's Agent D
 ## 📁 File Structure
 ```
 F:\bank-ai\
-├── main.py                 # FastAPI Application (Router, Endpoints, MCP Tool execution)
-├── config.py               # Configuration & Env variable loader
-├── requirements.txt        # Package dependencies
-├── omnifinance.db          # SQLite Database (generated on startup)
-├── test_sandbox.py         # End-to-end sandbox verification script
-├── implement.md            # Next.js UI migration plan
+├── backend/                # FastAPI Backend Application
+│   ├── main.py             # FastAPI Application (Router, Endpoints, MCP Tool execution)
+│   ├── config.py           # Configuration & Env variable loader
+│   ├── requirements.txt    # Package dependencies
+│   ├── Dockerfile          # Container build instructions
+│   ├── omnifinance.db      # SQLite Database (generated on startup)
+│   ├── test_sandbox.py     # End-to-end sandbox verification script
+│   │
+│   ├── agents/
+│   │   ├── __init__.py
+│   │   ├── orchestrator.py     # Central Orchestrator routing logic
+│   │   ├── expense_tracker.py  # Expense tracker agent (with rule-based & LLM parsers)
+│   │   ├── fraud_detector.py   # Fraud evaluator agent (risk score calculator)
+│   │   └── literacy_coach.py   # Literacy coach (grounded references & inline expansions)
+│   │
+│   ├── database/
+│   │   ├── __init__.py
+│   │   ├── db.py               # SQLite database access (atomic ledger logic, HITL state)
+│   │   └── vector_store.py     # ChromaDB vector store for semantic search
+│   │
+│   └── tests/
+│       └── test_fraud_detector.py
 │
-├── database/
-│   ├── __init__.py
-│   └── db.py               # SQLite database access (atomic ledger logic, HITL state)
+├── frontend/               # Next.js Frontend Dashboard Project
+│   ├── package.json        # Dependencies (React, Next.js, TypeScript)
+│   ├── next.config.ts      # Next.js configuration (static export setup)
+│   ├── public/             # Static assets (images, fonts, etc.)
+│   └── src/
+│       └── app/
+│           ├── globals.css # Premium dark theme stylesheet (custom properties, animations)
+│           ├── layout.tsx  # Dashboard layout metadata and FontAwesome CDN
+│           └── page.tsx    # Dashboard core view & React states
 │
-├── agents/
-│   ├── __init__.py
-│   ├── orchestrator.py     # Central Orchestrator routing logic
-│   ├── expense_tracker.py  # Expense tracker agent (with rule-based & LLM parsers)
-│   ├── fraud_detector.py   # Fraud evaluator agent (risk score calculator)
-│   └── literacy_coach.py   # Literacy coach (grounded references & inline expansions)
-│
-└── frontend/               # Next.js Frontend Dashboard Project
-    ├── package.json        # Dependencies (React, Next.js, TypeScript)
-    ├── next.config.ts      # Next.js configuration (static export setup)
-    ├── public/             # Static assets (images, fonts, etc.)
-    └── src/
-        └── app/
-            ├── globals.css # Premium dark theme stylesheet (custom properties, animations)
-            ├── layout.tsx  # Dashboard layout metadata and FontAwesome CDN
-            └── page.tsx    # Dashboard core view & React states
+├── tests/                  # Test suite
+└── README.md
 ```
 
 ## 🎨 UI & Frontend Dashboard
