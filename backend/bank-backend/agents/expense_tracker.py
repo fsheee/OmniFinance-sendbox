@@ -5,6 +5,7 @@ from typing import Dict, Any, Tuple
 import os
 import json
 import httpx
+from database import db
 
 class ExpenseTrackerAgent:
     def __init__(self, name: str = "Autonomous Expense Tracker"):
@@ -98,43 +99,24 @@ class ExpenseTrackerAgent:
 
         # 2. Extract Merchant
         merchant = "Unknown Merchant"
-        
-        # Try to find "at [Merchant]", "from [Merchant]", "to [Merchant]" (strong indicators)
-        merchant_match = re.search(
-            r"\b(?:at|from|to)\s+([A-Za-z0-9\s'&]+?)(?:\s+(?:last|yesterday|for|with|in|today|\$)\b|$)",
+
+        # Find noun/item after indicator keywords: buy, on, for, at
+        noun_pattern = re.search(
+            r"\b(buy|on|for|at)\s+(?:(?:a|an|the)\s+)?([A-Za-z']+)",
             query,
             re.IGNORECASE
         )
-        if merchant_match:
-            merchant = merchant_match.group(1).strip()
-        else:
-            # Check for "on [Item]"
-            on_match = re.search(
-                r"\bon\s+([A-Za-z0-9\s'&]+?)(?:\s+(?:last|yesterday|for|with|in|today|\$)\b|$)",
-                query,
-                re.IGNORECASE
-            )
-            if on_match:
-                item_candidate = on_match.group(1).strip().lower()
-                # If the item candidate is a known item type, we use a generic merchant
-                if any(kw in item_candidate for kw in ["pizza", "burger", "dinner", "lunch", "food", "coffee"]):
-                    merchant = "Domino's" if "pizza" in item_candidate else "Restaurant"
-                elif any(kw in item_candidate for kw in ["diamond", "ring", "watch", "jewelry"]):
-                    merchant = "Rolex" if "watch" in item_candidate else "Jeweler"
-                elif any(kw in item_candidate for kw in ["groceries", "milk", "eggs"]):
-                    merchant = "Grocery Store"
-                else:
-                    merchant = on_match.group(1).strip()
+        if noun_pattern:
+            item = noun_pattern.group(2).strip()
+            if item.lower() in ("groceries", "milk", "eggs"):
+                merchant = "Grocery Store"
             else:
-                # Guess merchant from words after spent/bought/paid
-                words = query.split()
-                if len(words) > 1:
-                    for i, w in enumerate(words):
-                        if w.lower() in ["spent", "bought", "paid"] and i + 1 < len(words):
-                            next_w = words[i + 1]
-                            if not next_w.startswith("$") and not next_w.isdigit():
-                                merchant = next_w.strip(",.?! ")
-                                break
+                merchant = item.capitalize()
+        else:
+            # Fallback: extract word(s) before the dollar amount
+            pre_amount = re.search(r'([A-Za-z\']+)\s+\$', query)
+            if pre_amount:
+                merchant = pre_amount.group(1).capitalize()
 
         # 3. Categorize
         category = "General"
@@ -201,8 +183,11 @@ class ExpenseTrackerAgent:
             location=parsed_data.get("location", "Home Location"),
             timestamp=parsed_data.get("timestamp")
         )
+        account_id = tool_call["payload"]["account_id"]
+        account = db.get_account(account_id)
         return {
             "agent": self.name,
             "parsed_details": parsed_data,
-            "tool_call": tool_call
+            "tool_call": tool_call,
+            "current_balance": account["balance"] if account else 0.0
         }

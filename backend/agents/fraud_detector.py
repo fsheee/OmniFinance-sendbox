@@ -41,13 +41,19 @@ class FraudDetectionAgent:
             velocity_risk = 0.0
         risk_components["velocity_risk"] = velocity_risk
 
-        # 3. Location Risk (suspicious, international, or unknown locations)
+        # 3. Location Risk
         loc_lower = location.lower()
         if any(country in loc_lower for country in self.HIGH_RISK_COUNTRIES):
             location_risk = 0.9
-        elif "suspicious" in loc_lower or "unknown" in loc_lower or "unusual" in loc_lower:
+        elif loc_lower in ("unknown", "foreign"):
+            location_risk = 0.9
+        elif loc_lower == "unverified":
+            location_risk = 0.5
+        elif loc_lower == "home location":
+            location_risk = 0.0
+        elif "suspicious" in loc_lower or "unusual" in loc_lower:
             location_risk = 0.7
-        elif "foreign" in loc_lower or "international" in loc_lower:
+        elif "international" in loc_lower:
             location_risk = 0.5
         else:
             location_risk = 0.0

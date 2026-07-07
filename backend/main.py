@@ -1,20 +1,36 @@
-from fastapi import FastAPI, HTTPException, Depends
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
+import logging
+from fastapi import FastAPI, HTTPException, Depends, Security
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any, List
 import os
 from database import db
-from database.vector_store import search_knowledge
 from agents.orchestrator import CentralOrchestrator
 from config import settings
+from dotenv import load_dotenv
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
+logger = logging.getLogger("omnifinance")
+
+load_dotenv()
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+API_KEY = os.getenv("SANDBOX_API_KEY", "omnifinance-dev-key")
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+
+async def verify_api_key(key: str = Security(api_key_header)):
+    if key != API_KEY:
+        raise HTTPException(status_code=403, detail="Invalid API Key")
+    return key
+
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
     description="OmniFinance Digital Wallet Sandbox with AI routing, fraud checking, and financial literacy coaching.",
     version="1.0.0"
 )
+
 
 # Enable CORS for local Next.js development server running on port 3000
 app.add_middleware(
@@ -24,7 +40,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
+@app.get("/")
+async def root():
+    return {
+        "status": "healthy",
+        "service": "OmniFinance API"
+    }
 # Initialize database schema on startup
 @app.on_event("startup")
 def startup_event():
@@ -43,10 +64,44 @@ class ToolExecutionRequest(BaseModel):
     tool_name: str = Field(..., description="Name of the tool to execute")
     arguments: Dict[str, Any] = Field(..., description="Key-value arguments for the tool")
 
+class FraudCheckRequest(BaseModel):
+    amount: float = Field(..., description="Transaction amount in USD", gt=0)
+    location: str = Field("Home Location", description="Transaction location identifier")
+    velocity_mins: int = Field(60, description="Minutes since last transaction", ge=0)
+
 # Instantiate Orchestrator
 orchestrator = CentralOrchestrator()
 
 # Dashboard and static assets are served from frontend/out at the end of the middleware stack
+
+@app.post("/fraud/check")
+def check_fraud_risk(request: FraudCheckRequest):
+    """
+    Evaluates a transaction for fraud risk using the FraudDetectionAgent.
+    
+    Returns risk score, decision (ALLOW / PAUSE_FOR_HITL), and detailed metrics.
+    Use this endpoint to demonstrate fraud routing directly through Swagger UI.
+    """
+    logger.info(f"Request received: amount={request.amount}, location={request.location}, velocity_mins={request.velocity_mins}")
+    evaluation = orchestrator.fraud_detector.evaluate_fraud_risk(
+        amount=request.amount,
+        location=request.location,
+        velocity_mins=request.velocity_mins
+    )
+    logger.info(f"Fraud agent invoked: {orchestrator.fraud_detector.name}")
+    logger.info(f"Risk score calculated: {evaluation['risk_score']}%")
+    logger.info(f"Routing decision: {evaluation['decision']}")
+    if evaluation["is_high_risk"]:
+        logger.info("HITL triggered: risk score exceeds 75% threshold")
+    
+    return {
+        "agent_used": orchestrator.fraud_detector.name,
+        "risk_score": evaluation["risk_score"],
+        "routing_decision": evaluation["decision"],
+        "transaction_status": "PENDING_HITL" if evaluation["is_high_risk"] else "ALLOW",
+        "metrics": evaluation["metrics"],
+        "is_high_risk": evaluation["is_high_risk"]
+    }
 
 @app.get("/api/telemetry")
 def get_sandbox_telemetry():
@@ -71,12 +126,7 @@ def get_sandbox_telemetry():
         }
     }
 
-@app.get("/knowledge/search")
-def knowledge_search(query: str, n_results: int = 5):
-    """Semantic search over the financial literacy knowledge base using ChromaDB vector search."""
-    return search_knowledge(query, n_results=n_results)
-
-@app.post("/chat")
+@app.post("/chat", dependencies=[Depends(verify_api_key)])
 def chat_orchestrator(request: ChatRequest):
     """
     Main orchestrator endpoint. Parses intent, delegates execution to sub-agents, 
@@ -101,7 +151,7 @@ def get_transaction_history(limit: int = 50):
     """Exposes transaction logs in the sandbox ledger."""
     return db.get_transactions("account_123", limit=limit)
 
-@app.post("/transactions/approve")
+@app.post("/transactions/approve", dependencies=[Depends(verify_api_key)])
 def approve_transaction(request: HITLApprovalRequest):
     """
     Resolves the Human-in-the-Loop (HITL) pause state.
@@ -120,7 +170,7 @@ def approve_transaction(request: HITLApprovalRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"System error resolving approval: {str(e)}")
 
-@app.post("/tools/execute")
+@app.post("/tools/execute", dependencies=[Depends(verify_api_key)])
 def execute_mcp_tool(request: ToolExecutionRequest):
     """
     Mock Model Context Protocol (MCP) execution bridge. Exposes the domain tools
@@ -178,7 +228,7 @@ def execute_mcp_tool(request: ToolExecutionRequest):
             detail=f"Tool '{tool}' not found. Available: log_transaction, evaluate_fraud_risk, fetch_financial_knowledge_base"
         )
 
-@app.post("/reset")
+@app.post("/reset", dependencies=[Depends(verify_api_key)])
 def reset_sandbox():
     """Resets the digital wallet balance to $5000.00 and clears all transactions."""
     try:
@@ -187,12 +237,8 @@ def reset_sandbox():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database reset failure: {str(e)}")
 
-# Mount the static export of the Next.js frontend at the root "/"
-# This must be mounted at the end so it doesn't mask API routes
-frontend_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend", "out")
-if os.path.exists(frontend_dir):
-    app.mount("/", StaticFiles(directory=frontend_dir, html=True), name="static")
-else:
-    # Fallback to local static folder if frontend build doesn't exist yet
-    app.mount("/", StaticFiles(directory="static", html=True), name="static")
-
+@app.get("/skills")
+def get_skills():
+    """Returns the full skills registry of all available agents and their methods."""
+    from agents.skills import SKILLS_REGISTRY
+    return {"skills": SKILLS_REGISTRY}

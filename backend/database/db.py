@@ -103,6 +103,17 @@ def log_transaction(
     with get_connection() as conn:
         cursor = conn.cursor()
         
+        # Check current balance before proceeding
+        cursor.execute("SELECT balance FROM accounts WHERE id = ?", (account_id,))
+        row = cursor.fetchone()
+        if not row:
+            raise ValueError(f"Account {account_id} not found")
+        current_balance = row["balance"]
+        
+        # If insufficient balance, save as PENDING_HITL instead of rejecting
+        if status in ("COMPLETED", "APPROVED") and amount > current_balance:
+            status = "PENDING_HITL"
+        
         # Insert transaction
         cursor.execute(
             """
@@ -131,6 +142,7 @@ def log_transaction(
         "velocity_mins": velocity_mins,
         "risk_score": risk_score,
         "status": status,
+        "current_balance": current_balance,
         "timestamp": datetime.utcnow().isoformat()
     }
 
@@ -151,6 +163,19 @@ def handle_hitl_approval(tx_id: str, approve: bool) -> Dict[str, Any]:
         
         if current_status != "PENDING_HITL":
             raise ValueError(f"Transaction {tx_id} is not in PENDING_HITL state (current: {current_status})")
+        
+        # Check current balance when approving
+        if approve:
+            cursor.execute("SELECT balance FROM accounts WHERE id = ?", (account_id,))
+            row = cursor.fetchone()
+            current_balance = row["balance"] if row else 0.0
+            if amount > current_balance:
+                return {
+                    "status": "REJECTED",
+                    "reason": "Cannot approve - still insufficient balance",
+                    "current_balance": current_balance,
+                    "requested_amount": amount
+                }
             
         # Update transaction status
         cursor.execute(

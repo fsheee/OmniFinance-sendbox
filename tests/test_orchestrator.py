@@ -3,6 +3,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from agents.orchestrator import CentralOrchestrator
+from database import db
 
 orchestrator = CentralOrchestrator()
 
@@ -80,6 +81,7 @@ def test_route_literacy_full_flow():
 
 
 def test_route_wallet_full_flow():
+    db.reset_db()
     result = orchestrator.route_and_execute("What is my balance?")
     assert result["intent"] == "WALLET"
     assert result["status"] == "SUCCESS"
@@ -94,8 +96,38 @@ def test_route_fraud_full_flow():
     assert "evaluation" in result["data"]
 
 
+def test_classify_transfer_as_fraud():
+    intent = orchestrator.classify_intent("Transfer $10000 to unknown account")
+    assert intent == "FRAUD"
+
+
+def test_classify_send_as_fraud():
+    intent = orchestrator.classify_intent("Send $500 to John")
+    assert intent == "FRAUD"
+
+
+def test_classify_send_money_as_fraud():
+    intent = orchestrator.classify_intent("Send money to my friend")
+    assert intent == "FRAUD"
+
+
+def test_classify_wire_as_fraud():
+    intent = orchestrator.classify_intent("Wire $500 to John")
+    assert intent == "FRAUD"
+
+
+def test_classify_spent_stays_expense():
+    intent = orchestrator.classify_intent("Spent $45 on pizza")
+    assert intent == "EXPENSE"
+
+
+def test_classify_bought_stays_expense():
+    intent = orchestrator.classify_intent("Bought groceries for $30")
+    assert intent == "EXPENSE"
+
+
 def test_route_high_risk_triggers_hitl():
-    result = orchestrator.route_and_execute("Spent $5200 on a diamond ring in Suspicious Location")
+    result = orchestrator.route_and_execute("Spent $5200 on a diamond ring in Unknown Location")
     assert result["intent"] == "EXPENSE"
     assert result["status"] == "PAUSED_WAITING_FOR_HITL"
     assert result["data"]["fraud_evaluation"]["risk_score"] > 75

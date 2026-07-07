@@ -40,6 +40,7 @@ interface TelemetryData {
 
 export default function Dashboard() {
   const [sessionId] = useState(() => 'sandbox_session_' + Math.random().toString(36).substring(2, 10));
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://afsheenkhi-omnifinance-api.hf.space';
   
   // App States
   const [balance, setBalance] = useState<number>(0.0);
@@ -84,17 +85,16 @@ export default function Dashboard() {
   const chatInputRef = useRef<HTMLInputElement>(null);
 
   // Dynamic API URL Helper for dev / prod compatibility
-  const getApiUrl = (path: string) => {
-    if (typeof window !== 'undefined') {
-      const port = window.location.port;
-      if (port && port !== '8000' && window.location.hostname === 'localhost') {
-        return `http://localhost:8000${path}`;
-      }
+  const getApiUrl = (path: string) => `${API_URL}${path}`;
+
+  // Wrapper around fetch that attaches the API key header to every request
+  const apiFetch = (url: string, options: RequestInit = {}) => {
+    const headers = new Headers(options.headers);
+    const apiKey = typeof process !== 'undefined' ? process.env.NEXT_PUBLIC_API_KEY : undefined;
+    if (apiKey) {
+      headers.set('X-API-Key', apiKey);
     }
-    if (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_API_URL) {
-      return `${process.env.NEXT_PUBLIC_API_URL}${path}`;
-    }
-    return path;
+    return fetch(url, { ...options, headers });
   };
 
   // Toast Handler
@@ -124,7 +124,7 @@ export default function Dashboard() {
 
   const refreshBalance = async () => {
     try {
-      const response = await fetch(getApiUrl('/wallet'));
+      const response = await apiFetch(getApiUrl('/wallet'));
       if (response.ok) {
         const data = await response.json();
         setBalance(data.balance);
@@ -139,7 +139,7 @@ export default function Dashboard() {
 
   const refreshTelemetry = async () => {
     try {
-      const response = await fetch(getApiUrl('/api/telemetry'));
+      const response = await apiFetch(getApiUrl('/api/telemetry'));
       if (response.ok) {
         const data: TelemetryData = await response.json();
         setTelemetry({
@@ -161,7 +161,7 @@ export default function Dashboard() {
 
   const refreshLedger = async () => {
     try {
-      const response = await fetch(getApiUrl('/transactions?limit=20'));
+      const response = await apiFetch(getApiUrl('/transactions?limit=20'));
       if (response.ok) {
         const data = await response.json();
         setTransactions(data);
@@ -183,7 +183,7 @@ export default function Dashboard() {
   // Initial load and periodic polling
   useEffect(() => {
     refreshAll();
-    const interval = setInterval(refreshTelemetry, 5000);
+    const interval = setInterval(refreshAll, 5000);
     return () => clearInterval(interval);
   }, []);
 
@@ -193,7 +193,7 @@ export default function Dashboard() {
       return;
     }
     try {
-      const response = await fetch(getApiUrl('/reset'), { method: 'POST' });
+      const response = await apiFetch(getApiUrl('/reset'), { method: 'POST' });
       const result = await response.json();
       if (result.status === 'SUCCESS') {
         showToast('Database reset successfully!', 'success');
@@ -219,12 +219,13 @@ export default function Dashboard() {
   // Handle HITL Decision (Approve / Reject)
   const handleHitlDecision = async (txId: string, approve: boolean) => {
     try {
-      const response = await fetch(getApiUrl('/transactions/approve'), {
+      const response = await apiFetch(getApiUrl('/transactions/approve'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ transaction_id: txId, approve }),
       });
       const result = await response.json();
+      console.log('HITL approval response:', result);
       if (response.ok) {
         showToast(result.message, approve ? 'success' : 'warning');
         refreshAll();
@@ -275,12 +276,71 @@ export default function Dashboard() {
     const currentThinkingId = 'thinking-' + Date.now();
     setThinkingMessageId(currentThinkingId);
 
+    // Check if user is asking about balance/wallet - route directly to /wallet
+    const balanceKeywords = ['balance', 'show my balance', 'wallet', 'how much money', 'my balance', 'check balance'];
+    const isBalanceQuery = balanceKeywords.some((keyword) => prompt.toLowerCase().includes(keyword));
+
+    if (isBalanceQuery) {
+      try {
+        const response = await apiFetch(getApiUrl('/wallet'));
+        setThinkingMessageId(null);
+        setIsChatInputDisabled(false);
+        setTimeout(() => chatInputRef.current?.focus(), 50);
+        if (response.ok) {
+          const data = await response.json();
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: 'reply-' + Date.now(),
+              senderType: 'system',
+              senderName: 'Central Orchestrator',
+              text: `Your current balance is <strong>$${data.balance.toFixed(2)} ${data.currency || 'USD'}</strong><br/><span style="color: var(--text-muted); font-size: 0.85em;">Account: <code>${data.id}</code></span>`,
+              badgeClass: 'badge-orchestrator',
+              intent: 'RAW_HTML',
+            },
+          ]);
+        } else {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: 'err-' + Date.now(),
+              senderType: 'system',
+              senderName: 'Central Orchestrator',
+              text: 'Could not retrieve your balance at this time. Please try again.',
+              badgeClass: 'badge-orchestrator',
+            },
+          ]);
+        }
+      } catch {
+        setThinkingMessageId(null);
+        setIsChatInputDisabled(false);
+        setTimeout(() => chatInputRef.current?.focus(), 50);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: 'err-' + Date.now(),
+            senderType: 'system',
+            senderName: 'Central Orchestrator',
+            text: 'Unable to connect to fetch your balance. Please ensure the server is running.',
+            badgeClass: 'badge-orchestrator',
+          },
+        ]);
+      }
+      return;
+    }
+
     try {
-      const response = await fetch(getApiUrl('/chat'), {
+      const response = await apiFetch(getApiUrl('/chat'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt, session_id: sessionId }),
       });
+
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        const text = await response.text();
+        throw new Error(`Expected JSON but got ${contentType}: ${text.substring(0, 200)}`);
+      }
 
       const result = await response.json();
       setThinkingMessageId(null);
@@ -322,21 +382,31 @@ export default function Dashboard() {
   };
 
   // Parse Orchestrator Response and route badge details
-  const handleAgentResponse = (res: { intent: string; message: string }) => {
+  const handleAgentResponse = (res: { intent: string; message: string; agent_used?: string }) => {
     const intent = res.intent;
-    const msg = res.message;
+    let msg = res.message;
+
+    // Show friendly message if backend returned an error
+    if (/system\s*error/i.test(msg) || /^error\b/i.test(msg)) {
+      msg = "I encountered an issue processing your request. Please try rephrasing or ask me something else.";
+    }
 
     let agentName = 'Central Orchestrator';
     let badgeClass = 'badge-orchestrator';
 
-    if (intent === 'EXPENSE') {
+    if (res.agent_used) {
+      agentName = res.agent_used;
+    } else if (intent === 'EXPENSE') {
       agentName = 'Expense Router Pipeline';
       badgeClass = 'badge-tracker';
       refreshAll();
+    } else if (intent === 'TRANSFER') {
+      agentName = 'Transfer Router Pipeline';
+      badgeClass = 'badge-tracker';
     } else if (intent === 'FRAUD') {
-      agentName = 'AI Fraud Detection Agent';
+      agentName = 'Fraud Detection Agent';
       badgeClass = 'badge-fraud';
-    } else if (intent === 'LITERACY') {
+    } else if (intent === 'LITERACY' || intent === 'FINANCIAL_EDUCATION') {
       agentName = 'Financial Literacy Coach';
       badgeClass = 'badge-coach';
     } else if (intent === 'WALLET') {
@@ -431,7 +501,7 @@ export default function Dashboard() {
       {!backendConnected && (
         <div className="connection-banner">
           <i className="fa-solid fa-triangle-exclamation"></i>
-          Cannot connect to backend at <code>localhost:8000</code>. Make sure the FastAPI server is running (<code>uvicorn main:app --reload</code>).
+          Cannot connect to backend at <code>{API_URL}</code>. Make sure the FastAPI server is running (<code>uvicorn main:app --reload</code>).
         </div>
       )}
 
@@ -611,28 +681,34 @@ export default function Dashboard() {
                         </div>
                       </div>
                       <div className="ledger-right">
-                        <span className="tx-amount">-${tx.amount.toFixed(2)}</span>
                         {tx.status === 'PENDING_HITL' ? (
-                          <div className="hitl-actions">
-                            <button
-                              className="btn btn-hitl btn-hitl-approve btn-approve"
-                              onClick={() => handleHitlDecision(tx.id, true)}
-                              title="Approve Transaction"
-                            >
-                              <i className="fa-solid fa-check"></i>
-                            </button>
-                            <button
-                              className="btn btn-hitl btn-hitl-reject btn-reject"
-                              onClick={() => handleHitlDecision(tx.id, false)}
-                              title="Reject Transaction"
-                            >
-                              <i className="fa-solid fa-xmark"></i>
-                            </button>
-                          </div>
+                          <>
+                            <span className="tx-amount tx-amount-pending">-${tx.amount.toFixed(2)} (Pending)</span>
+                            <div className="hitl-actions">
+                              <button
+                                className="btn btn-hitl btn-hitl-approve btn-approve"
+                                onClick={() => handleHitlDecision(tx.id, true)}
+                                title="Approve Transaction"
+                              >
+                                <i className="fa-solid fa-check"></i>
+                              </button>
+                              <button
+                                className="btn btn-hitl btn-hitl-reject btn-reject"
+                                onClick={() => handleHitlDecision(tx.id, false)}
+                                title="Reject Transaction"
+                              >
+                                <i className="fa-solid fa-xmark"></i>
+                              </button>
+                            </div>
+                            <span className="status-badge status-pending_hitl">Pending Approval</span>
+                          </>
                         ) : (
-                          <span className={`status-badge status-${tx.status.toLowerCase()}`}>
-                            {tx.status}
-                          </span>
+                          <>
+                            <span className="tx-amount">-${tx.amount.toFixed(2)}</span>
+                            <span className={`status-badge status-${tx.status.toLowerCase()}`}>
+                              {tx.status}
+                            </span>
+                          </>
                         )}
                       </div>
                     </div>

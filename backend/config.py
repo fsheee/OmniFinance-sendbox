@@ -16,10 +16,12 @@ load_env()
 class Settings:
     PROJECT_NAME: str = "OmniFinance Autonomous Banking Sandbox"
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+    HUGGING_FACE_TOKEN: str = os.getenv("HUGGING_FACE_TOKEN", "")
     DATABASE_PATH: str = os.path.join(
         os.path.dirname(os.path.abspath(__file__)), 
         "omnifinance.db"
     )
+    APP_PORT: int = int(os.getenv("PORT", "7860"))
 
 settings = Settings()
 
