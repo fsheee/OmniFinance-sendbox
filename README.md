@@ -284,4 +284,9 @@ X-API-Key: omnifinance-secret-key
 ✅ Extensible agent framework for adding new capabilities  
 ✅ Interactive API documentation with Swagger UI  
 
+## 📊 Project Presentation
+
+[View OmniFinance Slides](https://docs.google.com/presentation/d/1y-_z6qxqlmHsIgWMIPUqppUu8ihu0cJQ5yrL0HpQb0Y/edit?usp=sharing)
+
+
 
