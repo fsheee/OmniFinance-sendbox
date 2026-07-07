@@ -258,7 +258,8 @@ X-API-Key: omnifinance-secret-key
 
 ## Quick Test
 [Dashboard:](https://omnifinance-ten.vercel.app/) <br>
-[API Docs:](https://afsheekhi-omnifinance-api.hf.space/docs)
+[API Docs:](https://afsheenkhi-omnifinance-api.hf.space/docs)
+
 
 ---
 
